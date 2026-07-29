@@ -13,6 +13,14 @@ class GestionUsuarios:
     Servicio general para gestionar usuarios.
     Es usado por: Registro y Autenticación, Gestión de Amigos,
     Álbumes y Fotos, Administración.
+
+    Realiza el rol de «GestorUsuario» del diagrama de clases de diseño
+    de CU-18 (Deshabilitar usuario). Los métodos `obtenerUsuarioPorId`,
+    `obtenerUsuarioPorEmail`, `buscarPorNombreApellido`, `guardarUsuario`
+    y `actualizarUsuario` son la traducción literal de ese diagrama;
+    se implementan como alias de los métodos ya usados por el resto de
+    los casos de uso del sistema (`obtener_por_id`, `guardar`, etc.)
+    para no romper ninguna otra funcionalidad.
     """
 
     def __init__(self):
@@ -48,12 +56,17 @@ class GestionUsuarios:
         return row is None
 
     def buscarPorNombreApellido(self, termino: str) -> list:
-        """Busca usuarios por nombre o apellido (búsqueda parcial)."""
-        t = f"%{termino.strip()}%"
+        """
+        +buscarPorNombreApellido(criterio): List<Usuario> — CU-18 diseño.
+        Busca usuarios activos por nombre o apellido (búsqueda parcial).
+        Con `termino` vacío devuelve todos los usuarios activos (se usa
+        también para poblar el listado inicial del panel de administración).
+        """
+        t = f"%{(termino or '').strip()}%"
         rows = self._db.execute(
             """SELECT * FROM usuario
                WHERE (nombre LIKE ? OR apellido LIKE ?)
-               AND habilitado = 1""",
+               AND activo = 1""",
             (t, t)
         ).fetchall()
         return [self._fila_a_usuario(r) for r in rows]
@@ -75,12 +88,12 @@ class GestionUsuarios:
         try:
             cursor = self._db.execute(
                 """INSERT INTO usuario (nombre, apellido, email, nombre_usuario,
-                   contrasena, foto_perfil, fecha_nac, dias_aviso, activo, fecha_registro)
-                   VALUES (?,?,?,?,?,?,?,?,?,?)""",
+                   contrasena, foto_perfil, fecha_nac, dias_aviso, activo, rol, fecha_registro)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
                 (usuario.nombre, usuario.apellido, usuario.email,
                  usuario.nombre_usuario, usuario.contrasena,
                  usuario.foto_perfil, usuario.fecha_nac,
-                 usuario.dias_aviso, 1 if usuario.activo else 0,
+                 usuario.dias_aviso, int(usuario.activo), usuario.rol,
                  usuario.fecha_registro)
             )
             self._db.commit()
@@ -89,6 +102,11 @@ class GestionUsuarios:
             raise ErrorSistema(f"Error al guardar usuario: {e}")
 
     def actualizar(self, usuario: Usuario):
+        """
+        Actualiza los datos editables del perfil (CU-02) *y* el estado
+        activo/rol si fueron modificados en el objeto en memoria (p. ej.
+        por DeshabilitarUsuarioCtrl.deshabilitarUsuario() vía setActivo()).
+        """
         try:
             self._db.execute(
                 """UPDATE usuario SET nombre=?, apellido=?, email=?,
@@ -96,11 +114,27 @@ class GestionUsuarios:
                    WHERE id=?""",
                 (usuario.nombre, usuario.apellido, usuario.email,
                  usuario.foto_perfil, usuario.fecha_nac, usuario.dias_aviso,
-                 1 if usuario.activo else 0, usuario.id)
+                 int(usuario.activo), usuario.id)
             )
             self._db.commit()
         except Exception as e:
             raise ErrorSistema(f"Error al actualizar usuario: {e}")
+
+    # ══════════════════════════════════════════════
+    # Alias literales — «GestorUsuario» (CU-18 diagrama de clases de diseño)
+    # ══════════════════════════════════════════════
+
+    def obtenerUsuarioPorId(self, id: int) -> Usuario:
+        return self.obtener_por_id(id)
+
+    def obtenerUsuarioPorEmail(self, email: str) -> Usuario:
+        return self.obtener_por_email(email)
+
+    def guardarUsuario(self, u: Usuario) -> Usuario:
+        return self.guardar(u)
+
+    def actualizarUsuario(self, u: Usuario):
+        return self.actualizar(u)
 
     def _fila_a_usuario(self, row) -> Usuario:
         return Usuario(
@@ -113,6 +147,7 @@ class GestionUsuarios:
             foto_perfil=row["foto_perfil"],
             fecha_nac=row["fecha_nac"],
             dias_aviso=row["dias_aviso"],
-            activo=bool(row["activo"]),
+            activo=bool(row["activo"]) if "activo" in row.keys() else True,
+            rol=row["rol"] if "rol" in row.keys() else Usuario.ROL_USUARIO,
             fecha_registro=row["fecha_registro"] if "fecha_registro" in row.keys() else None
         )

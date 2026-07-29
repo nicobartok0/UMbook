@@ -41,6 +41,17 @@
       </span>
     </div>
 
+    <form method="GET" action="{{ url_for('admin') }}" style="display:flex;gap:8px;margin-bottom:16px;">
+      <input type="text" name="q" value="{{ termino or '' }}"
+             placeholder="Buscar por nombre o email…"
+             style="flex:1;padding:8px 12px;border:1px solid var(--gris-borde);
+                    border-radius:8px;font-size:13px;">
+      <button type="submit" class="btn btn-secundario" style="font-size:13px;">Buscar</button>
+      {% if termino %}
+      <a href="{{ url_for('admin') }}" class="btn btn-secundario" style="font-size:13px;">Limpiar</a>
+      {% endif %}
+    </form>
+
     {% if usuarios %}
     <table style="width:100%;border-collapse:collapse;font-size:13px;">
       <thead>
@@ -55,15 +66,15 @@
       <tbody>
         {% for u in usuarios %}
         <tr style="border-bottom:1px solid var(--gris-borde);
-                   {% if not u.habilitado %}background:#fef2f2;{% endif %}">
+                   {% if not u.activo %}background:#fef2f2;{% endif %}">
           <td style="padding:8px;">
             <div style="display:flex;align-items:center;gap:8px;">
               <div class="avatar-chico"
                    style="background:hsl({{ loop.index * 53 % 360 }},50%,45%);
-                          {% if not u.habilitado %}opacity:.5;{% endif %}">
+                          {% if not u.activo %}opacity:.5;{% endif %}">
                 {{ u.nombre[0]|upper }}{{ u.apellido[0]|upper }}
               </div>
-              <span {% if not u.habilitado %}style="color:#9ca3af;"{% endif %}>
+              <span {% if not u.activo %}style="color:#9ca3af;"{% endif %}>
                 {{ u.nombre }} {{ u.apellido }}
               </span>
             </div>
@@ -79,7 +90,7 @@
             {% endif %}
           </td>
           <td style="padding:8px;text-align:center;">
-            {% if u.habilitado %}
+            {% if u.activo %}
             <span style="background:#d1fae5;color:#065f46;font-size:11px;font-weight:600;
                          padding:2px 8px;border-radius:20px;">Activo</span>
             {% else %}
@@ -88,8 +99,8 @@
             {% endif %}
           </td>
           <td style="padding:8px;text-align:center;">
-            {% if not u.es_admin %}
-              {% if u.habilitado %}
+            {% if u.id != session.usuario_id %}
+              {% if u.activo %}
               <button class="btn btn-peligro" style="font-size:11px;padding:4px 10px;"
                       onclick="abrirModal('modal-deshabilitar-{{ u.id }}')">
                 Deshabilitar
@@ -105,13 +116,13 @@
               </form>
               {% endif %}
             {% else %}
-            <span style="font-size:11px;color:var(--gris-texto);">—</span>
+            <span style="font-size:11px;color:var(--gris-texto);" title="No podés deshabilitar tu propia cuenta">—</span>
             {% endif %}
           </td>
         </tr>
 
         <!-- Modal confirmar deshabilitar -->
-        {% if u.habilitado and not u.es_admin %}
+        {% if u.activo and u.id != session.usuario_id %}
         <div class="modal-overlay" id="modal-deshabilitar-{{ u.id }}">
           <div class="modal">
             <h3>Deshabilitar usuario</h3>

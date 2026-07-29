@@ -16,20 +16,38 @@
   <div class="alerta alerta-error">⚠ {{ error }}</div>
   {% endif %}
 
-  <!-- ── Crear grupo ── -->
+  <!-- ── Crear grupo (CU-08: crearGrupo(nombre, miembros)) ── -->
   <div class="tarjeta" style="margin-bottom:20px;">
     <h2 style="font-size:17px;font-weight:700;color:var(--azul);margin-bottom:14px;">
       Crear nuevo grupo
     </h2>
-    <form method="POST" action="{{ url_for('crear_grupo') }}"
-          style="display:flex;gap:10px;align-items:flex-end;">
-      <div class="campo" style="flex:1;margin-bottom:0;">
+    <form method="POST" action="{{ url_for('crear_grupo') }}">
+      <div class="campo">
         <label class="etiqueta" for="nombre-grupo">Nombre del grupo</label>
         <input type="text" id="nombre-grupo" name="nombre" class="input"
                placeholder="Ej: Familia, Trabajo, Compañeros…"
                maxlength="60" required>
       </div>
-      <button type="submit" class="btn btn-primario">+ Crear</button>
+
+      {% if amigos %}
+      <div class="campo">
+        <label class="etiqueta">Miembros (solo tus amigos)</label>
+        <div style="display:flex;flex-wrap:wrap;gap:10px;margin-top:6px;">
+          {% for amigo in amigos %}
+          <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer;">
+            <input type="checkbox" name="miembro_ids" value="{{ amigo.id }}">
+            {{ amigo.nombre }} {{ amigo.apellido }}
+          </label>
+          {% endfor %}
+        </div>
+      </div>
+      {% else %}
+      <p style="font-size:13px;color:var(--gris-texto);">
+        Todavía no tenés amigos para asignar; podés crear el grupo igual y agregar miembros después.
+      </p>
+      {% endif %}
+
+      <button type="submit" class="btn btn-primario" style="margin-top:6px;">+ Crear grupo</button>
     </form>
   </div>
 
@@ -64,42 +82,31 @@
 
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
 
-        <!-- Miembros -->
+        <!-- Miembros (solo lectura; se editan en el modal Editar, junto al nombre) -->
         <div>
           <p style="font-size:12px;font-weight:600;color:var(--gris-texto);
                     text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px;">
             Miembros
           </p>
-          {% if amigos %}
-          <form method="POST"
-                action="{{ url_for('actualizar_miembros', grupo_id=item.grupo.id) }}">
-            <div style="display:flex;flex-direction:column;gap:6px;margin-bottom:10px;">
-              {% for amigo in amigos %}
-              <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;">
-                <input type="checkbox" name="miembro_ids" value="{{ amigo.id }}"
-                  {% if amigo.id in item.grupo.miembros %}checked{% endif %}>
-                <div class="avatar-chico"
-                     style="background:hsl({{ loop.index * 47 % 360 }},55%,45%);
-                            width:24px;height:24px;font-size:10px;">
-                  {{ amigo.nombre[0]|upper }}{{ amigo.apellido[0]|upper }}
-                </div>
-                {{ amigo.nombre }} {{ amigo.apellido }}
-              </label>
-              {% endfor %}
+          {% if item.miembros %}
+          <div style="display:flex;flex-direction:column;gap:6px;">
+            {% for m in item.miembros %}
+            <div style="display:flex;align-items:center;gap:8px;font-size:13px;">
+              <div class="avatar-chico"
+                   style="background:hsl({{ loop.index * 47 % 360 }},55%,45%);
+                          width:24px;height:24px;font-size:10px;">
+                {{ m.nombre[0]|upper }}{{ m.apellido[0]|upper }}
+              </div>
+              {{ m.nombre }} {{ m.apellido }}
             </div>
-            <button type="submit" class="btn btn-secundario"
-                    style="font-size:12px;padding:5px 12px;">
-              Guardar miembros
-            </button>
-          </form>
+            {% endfor %}
+          </div>
           {% else %}
-          <p style="font-size:13px;color:var(--gris-texto);">
-            No tenés amigos para asignar.
-          </p>
+          <p style="font-size:13px;color:var(--gris-texto);">Sin miembros todavía.</p>
           {% endif %}
         </div>
 
-        <!-- Permisos -->
+        <!-- Permisos (CU-09) -->
         <div>
           <p style="font-size:12px;font-weight:600;color:var(--gris-texto);
                     text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px;">
@@ -136,7 +143,7 @@
 
           {% if not item.permisos.ver_albumes and not item.permisos.comentar_fotos and not item.permisos.escribir_muro %}
           <p style="font-size:11px;color:#f59e0b;margin-top:8px;">
-            ⚠ Sin permisos — los miembros no pueden realizar acciones.
+            ⚠ Sin permisos activos — hace falta marcar al menos uno para guardar.
           </p>
           {% endif %}
         </div>
@@ -144,17 +151,33 @@
       </div>
     </div>
 
-    <!-- Modal editar nombre -->
+    <!-- Modal editar grupo: nombre + miembros juntos (CU-08: editarGrupo(idGrupo, nombre, miembros)) -->
     <div class="modal-overlay" id="modal-editar-{{ item.grupo.id }}">
       <div class="modal">
-        <h3>Editar nombre del grupo</h3>
+        <h3>Editar grupo</h3>
         <form method="POST"
-              action="{{ url_for('renombrar_grupo', grupo_id=item.grupo.id) }}">
+              action="{{ url_for('editar_grupo', grupo_id=item.grupo.id) }}">
           <div class="campo">
-            <label class="etiqueta">Nuevo nombre</label>
+            <label class="etiqueta">Nombre</label>
             <input type="text" name="nombre" class="input"
                    value="{{ item.grupo.nombre }}" maxlength="60" required>
           </div>
+
+          {% if amigos %}
+          <div class="campo">
+            <label class="etiqueta">Miembros (solo tus amigos)</label>
+            <div style="display:flex;flex-direction:column;gap:6px;margin-top:6px;max-height:160px;overflow-y:auto;">
+              {% for amigo in amigos %}
+              <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;">
+                <input type="checkbox" name="miembro_ids" value="{{ amigo.id }}"
+                  {% if amigo.id in item.grupo.miembros %}checked{% endif %}>
+                {{ amigo.nombre }} {{ amigo.apellido }}
+              </label>
+              {% endfor %}
+            </div>
+          </div>
+          {% endif %}
+
           <div class="modal-acciones">
             <button type="button" class="btn btn-secundario"
                     onclick="cerrarModal('modal-editar-{{ item.grupo.id }}')">

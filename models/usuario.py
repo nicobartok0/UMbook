@@ -3,7 +3,7 @@ Capa de modelos — Entity: Usuario
 Representa la clase de análisis/diseño Usuario «entity» / «model».
 """
 
-from infrastructure.errores import ErrorValidacion
+from infrastructure.errores import ErrorValidacion, ErrorAcceso
 
 
 class Usuario:
@@ -11,13 +11,20 @@ class Usuario:
     Entidad Usuario del sistema UMBook.
     Encapsula los datos del usuario y las reglas de validación
     de sus atributos.
+
+    `activo` y `rol` son los atributos que exige el diagrama de clases
+    de diseño de CU-18 (Deshabilitar usuario); `setActivo`/`isActivo`/
+    `impedirAcceso` son los métodos literales de ese mismo diagrama.
     """
+
+    ROL_ADMIN = "ADMIN"
+    ROL_USUARIO = "USUARIO"
 
     def __init__(self, id: int = None, nombre: str = "", apellido: str = "",
                  email: str = "", nombre_usuario: str = "", contrasena: str = "",
                  foto_perfil: str = None, fecha_nac: str = None,
                  dias_aviso: int = 7, activo: bool = True,
-                 fecha_registro: str = None):
+                 rol: str = ROL_USUARIO, fecha_registro: str = None):
         self._id = id
         self._nombre = nombre
         self._apellido = apellido
@@ -27,7 +34,8 @@ class Usuario:
         self._foto_perfil = foto_perfil
         self._fecha_nac = fecha_nac
         self._dias_aviso = dias_aviso
-        self._activo = activo
+        self._activo = activo if activo is not None else True
+        self._rol = rol or self.ROL_USUARIO
         self._fecha_registro = fecha_registro
 
     # ── Getters ──
@@ -72,7 +80,17 @@ class Usuario:
         return self._dias_aviso
 
     @property
+    def rol(self) -> str:
+        return self._rol
+
+    @property
+    def es_admin(self) -> bool:
+        """Atajo de lectura: True si rol == ADMIN."""
+        return self._rol == self.ROL_ADMIN
+
+    @property
     def activo(self) -> bool:
+        """Atajo Pythonic equivalente a isActivo(), para uso interno cómodo."""
         return self._activo
 
     # ── Setters con validación ──
@@ -120,9 +138,26 @@ class Usuario:
             raise ErrorValidacion("Los días de aviso deben estar entre 1 y 30.")
         self._dias_aviso = valor
 
-    @activo.setter
-    def activo(self, valor: bool):
-        self._activo = valor
+    # ══════════════════════════════════════════════
+    # CU-18 — Deshabilitar usuario (métodos literales del diagrama de diseño)
+    # ══════════════════════════════════════════════
+
+    def setActivo(self, estado: bool):
+        """+setActivo(estado: boolean): void"""
+        self._activo = bool(estado)
+
+    def isActivo(self) -> bool:
+        """+isActivo(): boolean"""
+        return self._activo
+
+    def impedirAcceso(self):
+        """
+        +impedirAcceso(): void
+        RE-UE01: se invoca desde el login cuando isActivo() es False.
+        Representa la denegación de acceso; no muta estado.
+        """
+        raise ErrorAcceso(
+            "Tu cuenta está deshabilitada. Contactá a un administrador.")
 
     @property
     def fecha_registro(self) -> str:

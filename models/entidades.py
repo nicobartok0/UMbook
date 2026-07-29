@@ -237,18 +237,38 @@ class Grupo:
 
     @nombre.setter
     def nombre(self, valor: str):
-        self._nombre = valor.strip()
+        self._nombre = valor.strip() if valor else valor
 
     @property
     def miembros(self) -> list:
         return list(self._miembros)
 
-    def agregar_miembro(self, usuario_id: int):
-        if usuario_id not in self._miembros:
-            self._miembros.append(usuario_id)
+    def agregarMiembro(self, idUsuario: int):
+        """+agregarMiembro(idUsuario: Integer): void — CU-08 diseño."""
+        if idUsuario not in self._miembros:
+            self._miembros.append(idUsuario)
 
-    def quitar_miembro(self, usuario_id: int):
-        self._miembros = [m for m in self._miembros if m != usuario_id]
+    def quitarMiembro(self, idUsuario: int):
+        """+quitarMiembro(idUsuario: Integer): void — CU-08 diseño."""
+        self._miembros = [m for m in self._miembros if m != idUsuario]
+
+    def validarNombreNoNulo(self) -> bool:
+        """
+        +validarNombreNoNulo(): Boolean — CU-08 diseño / REGR01.
+        El nombre del grupo no puede ser nulo ni vacío.
+        """
+        return bool(self._nombre and self._nombre.strip())
+
+    def ejecutarEliminacionEnCascada(self):
+        """
+        +ejecutarEliminacionEnCascada(): void — CU-08 diseño / REGR02.
+        Es responsabilidad de esta entidad disparar la eliminación en
+        cascada de sus GrupoPermiso asociados. Como el proyecto no usa
+        un ORM con cascade nativo, este método documenta la intención;
+        RepositorioGrupo.eliminar() ejecuta el DELETE real inmediatamente
+        después de esta llamada.
+        """
+        pass
 
     def __repr__(self) -> str:
         return f"Grupo(id={self._id}, nombre={self._nombre}, propietario={self._propietario})"
@@ -261,12 +281,17 @@ class GrupoPermiso:
     en el sitio del propietario.
     """
 
-    def __init__(self, grupo_id: int = None, ver_albumes: bool = False,
+    def __init__(self, id: int = None, grupo_id: int = None, ver_albumes: bool = False,
                  comentar_fotos: bool = False, escribir_muro: bool = False):
+        self._id = id
         self._grupo_id = grupo_id
         self._ver_albumes = ver_albumes
         self._comentar_fotos = comentar_fotos
         self._escribir_muro = escribir_muro
+
+    @property
+    def id(self) -> int:
+        return self._id
 
     @property
     def grupo_id(self) -> int:
@@ -295,6 +320,19 @@ class GrupoPermiso:
     @escribir_muro.setter
     def escribir_muro(self, valor: bool):
         self._escribir_muro = valor
+
+    def actualizarPermisos(self, ver: bool, comentar: bool, escribir: bool):
+        """+actualizarPermisos(ver, comentar, escribir): void — CU-09 diseño."""
+        self._ver_albumes = bool(ver)
+        self._comentar_fotos = bool(comentar)
+        self._escribir_muro = bool(escribir)
+
+    def tienePermisosActivos(self) -> bool:
+        """
+        +tienePermisosActivos(): Boolean — CU-09 diseño / REGP02, RE-03, RE-05.
+        Impide que la configuración se guarde con los 3 permisos en False.
+        """
+        return self._ver_albumes or self._comentar_fotos or self._escribir_muro
 
     def __repr__(self) -> str:
         return (f"GrupoPermiso(grupo={self._grupo_id}, "

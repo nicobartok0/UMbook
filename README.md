@@ -35,7 +35,7 @@ python3 app.py
 
 ### Acceder
 
-Abrí el navegador en `http://127.0.0.1:9000`
+Abrí el navegador en `http://127.0.0.1:5000`
 
 ### Usuarios de prueba
 

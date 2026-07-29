@@ -253,11 +253,12 @@ class RepositorioGrupo:
 
     def crear(self, propietario_id: int, nombre: str):
         from models.entidades import Grupo
-        if not nombre or not nombre.strip():
+        grupo_tmp = Grupo(propietario=propietario_id, nombre=(nombre or "").strip())
+        if not grupo_tmp.validarNombreNoNulo():
             raise ErrorNegocio("El nombre del grupo es obligatorio.")
         cursor = self._db.execute(
             "INSERT INTO grupo (propietario, nombre) VALUES (?, ?)",
-            (propietario_id, nombre.strip())
+            (propietario_id, grupo_tmp.nombre)
         )
         self._db.commit()
         # Crear fila de permisos vacía asociada al grupo
@@ -268,15 +269,26 @@ class RepositorioGrupo:
         self._db.commit()
         return self.obtener(cursor.lastrowid)
 
+    def existe_nombre(self, propietario_id: int, nombre: str, excluir_id: int = None) -> bool:
+        """REGC03/RE-06: existe otro grupo con el mismo nombre para este usuario."""
+        query = "SELECT COUNT(*) AS c FROM grupo WHERE propietario = ? AND nombre = ?"
+        params = [propietario_id, (nombre or "").strip()]
+        if excluir_id is not None:
+            query += " AND id != ?"
+            params.append(excluir_id)
+        row = self._db.execute(query, params).fetchone()
+        return row["c"] > 0
+
     def renombrar(self, grupo_id: int, propietario_id: int, nuevo_nombre: str):
         grupo = self.obtener(grupo_id)
         if grupo.propietario != propietario_id:
             raise ErrorNegocio("No tenés permiso para editar este grupo.")
-        if not nuevo_nombre or not nuevo_nombre.strip():
+        grupo.nombre = (nuevo_nombre or "").strip()
+        if not grupo.validarNombreNoNulo():
             raise ErrorNegocio("El nombre del grupo es obligatorio.")
         self._db.execute(
             "UPDATE grupo SET nombre = ? WHERE id = ?",
-            (nuevo_nombre.strip(), grupo_id)
+            (grupo.nombre, grupo_id)
         )
         self._db.commit()
 
@@ -284,7 +296,9 @@ class RepositorioGrupo:
         grupo = self.obtener(grupo_id)
         if grupo.propietario != propietario_id:
             raise ErrorNegocio("No tenés permiso para eliminar este grupo.")
-        # Eliminar en cascada: permisos y miembros primero
+        grupo.ejecutarEliminacionEnCascada()  # REGR02: responsabilidad de la entidad
+        # Sin ORM con cascade nativo: el DELETE real lo hace el repositorio,
+        # inmediatamente después de que la entidad "dispara" la cascada.
         self._db.execute("DELETE FROM grupo_permiso WHERE grupo_id = ?", (grupo_id,))
         self._db.execute("DELETE FROM grupo_miembro WHERE grupo_id = ?", (grupo_id,))
         self._db.execute("DELETE FROM grupo WHERE id = ?", (grupo_id,))
@@ -304,10 +318,16 @@ class RepositorioGrupo:
         grupo = self.obtener(grupo_id)
         if grupo.propietario != propietario_id:
             raise ErrorNegocio("No tenés permiso para modificar este grupo.")
+        actuales = set(grupo.miembros)
+        nuevos = set(nuevos_ids or [])
+        for uid in nuevos - actuales:
+            grupo.agregarMiembro(uid)
+        for uid in actuales - nuevos:
+            grupo.quitarMiembro(uid)
         self._db.execute(
             "DELETE FROM grupo_miembro WHERE grupo_id = ?", (grupo_id,)
         )
-        for uid in nuevos_ids:
+        for uid in grupo.miembros:
             self._db.execute(
                 "INSERT OR IGNORE INTO grupo_miembro (grupo_id, usuario_id) VALUES (?,?)",
                 (grupo_id, uid)
@@ -324,6 +344,7 @@ class RepositorioGrupo:
         if not row:
             return GrupoPermiso(grupo_id=grupo_id)
         return GrupoPermiso(
+            id=row["id"],
             grupo_id=row["grupo_id"],
             ver_albumes=bool(row["ver_albumes"]),
             comentar_fotos=bool(row["comentar_fotos"]),
@@ -342,6 +363,7 @@ class RepositorioGrupo:
              int(permisos.comentar_fotos), int(permisos.escribir_muro))
         )
         self._db.commit()
+        return self.obtener_permisos(permisos.grupo_id)
 
     # ── Helpers ──
 

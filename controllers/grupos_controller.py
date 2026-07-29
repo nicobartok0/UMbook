@@ -1,50 +1,48 @@
 """
-Controlador — CU-08 Gestionar grupos de amigos / CU-09 Configurar permisos por grupo
-Responsabilidad: coordinar la creación, edición, eliminación de grupos,
-asignación de miembros y configuración de permisos por grupo.
+Controlador — CU-08 Gestionar grupos de amigos
+Clase: GrupoController «controller»
+
+Nombres de método literales del diagrama de clases de diseño corregido
+de CU-08 (docx "CasosDeUso-CORREGIDOS"), siguiendo la convención de
+camelCase para métodos que se corresponden 1:1 con el diagrama, ya
+usada por el resto de los controladores del proyecto.
 """
 
 from models.gestion_usuarios import GestionUsuarios
 from models.repositorios import RepositorioAmistad, RepositorioGrupo
-from models.entidades import GrupoPermiso
 from infrastructure.errores import ErrorNegocio, ErrorAcceso
 from infrastructure.logger import Logger
 
 
-class GruposController:
+class GrupoController:
     """
-    Controlador unificado para CU-08 y CU-09.
-    Todas las operaciones verifican que el usuario sea propietario
-    del grupo antes de permitir cualquier modificación.
+    -usuarioActualId: Integer
+    -resultadoOperacion: Boolean
+
+    El controlador se instancia por request con el id del usuario logueado
+    (usuarioActualId); las operaciones de escritura (crear/editar/eliminar)
+    no reciben idUsuario como parámetro porque usan ese valor interno,
+    tal como muestra el diagrama de clases.
     """
 
-    def __init__(self):
+    def __init__(self, usuarioActualId: int = None):
+        self._usuarioActualId = usuarioActualId
+        self._resultadoOperacion = None
         self._gestion = GestionUsuarios()
         self._repo_grupo = RepositorioGrupo()
         self._repo_amistad = RepositorioAmistad()
         self._logger = Logger()
 
-    # ══════════════════════════════════════════════
-    # CU-08 — Gestionar grupos
-    # ══════════════════════════════════════════════
-
-    def listar_grupos(self, propietario_id: int) -> dict:
-        """
-        Devuelve todos los grupos del usuario con sus miembros
-        y los permisos de cada uno, más la lista de amigos disponibles
-        para asignar a grupos.
-        """
+    def obtenerGrupos(self, idUsuario: int) -> dict:
+        """+obtenerGrupos(idUsuario: Integer): List<Grupo>"""
         try:
-            grupos = self._repo_grupo.listar_de_usuario(propietario_id)
-
-            # Enriquecer cada grupo con datos de miembros y permisos
+            grupos = self._repo_grupo.listar_de_usuario(idUsuario)
             grupos_enriquecidos = []
             for grupo in grupos:
                 miembros_data = []
                 for uid in grupo.miembros:
                     try:
-                        u = self._gestion.obtener_por_id(uid)
-                        miembros_data.append(u)
+                        miembros_data.append(self._gestion.obtenerUsuarioPorId(uid))
                     except ErrorNegocio:
                         continue
                 permisos = self._repo_grupo.obtener_permisos(grupo.id)
@@ -53,134 +51,111 @@ class GruposController:
                     "miembros": miembros_data,
                     "permisos": permisos,
                 })
-
-            # Lista de amigos del usuario para el formulario de asignación
-            amistades = self._repo_amistad.listar_de_usuario(propietario_id)
-            amigos = []
-            for a in amistades:
-                otro_id = (a.usuario_destino
-                           if a.usuario_origen == propietario_id
-                           else a.usuario_origen)
-                try:
-                    amigos.append(self._gestion.obtener_por_id(otro_id))
-                except ErrorNegocio:
-                    continue
-
-            return {"ok": True, "grupos": grupos_enriquecidos, "amigos": amigos}
-
+            return {"ok": True, "grupos": grupos_enriquecidos}
         except Exception as e:
             return {"ok": False, "mensaje": str(e)}
 
-    def crear_grupo(self, propietario_id: int, nombre: str) -> dict:
-        """
-        Flujo principal CU-08: crea un nuevo grupo con nombre.
-        Flujo alternativo: si el nombre está vacío, retorna error.
-        """
+    def obtenerAmigosDisponibles(self, idUsuario: int) -> dict:
+        """+obtenerAmigosDisponibles(idUsuario: Integer): List<Usuario>"""
         try:
-            if not nombre or not nombre.strip():
-                raise ErrorNegocio("El nombre del grupo es obligatorio.")
-            grupo = self._repo_grupo.crear(propietario_id, nombre)
-            self._logger.registrar(
-                "CREAR_GRUPO",
-                f"Usuario {propietario_id} creó el grupo '{nombre}'",
-                propietario_id
-            )
-            return {"ok": True, "grupo": grupo,
-                    "mensaje": f"Grupo '{grupo.nombre}' creado correctamente."}
-        except ErrorNegocio as e:
-            return {"ok": False, "mensaje": str(e)}
-
-    def renombrar_grupo(self, propietario_id: int, grupo_id: int,
-                        nuevo_nombre: str) -> dict:
-        """Edita el nombre de un grupo existente (CU-08, paso 5)."""
-        try:
-            self._repo_grupo.renombrar(grupo_id, propietario_id, nuevo_nombre)
-            self._logger.registrar(
-                "EDITAR_GRUPO",
-                f"Usuario {propietario_id} renombró grupo {grupo_id} a '{nuevo_nombre}'",
-                propietario_id
-            )
-            return {"ok": True, "mensaje": "Nombre actualizado correctamente."}
-        except ErrorNegocio as e:
-            return {"ok": False, "mensaje": str(e)}
-
-    def eliminar_grupo(self, propietario_id: int, grupo_id: int) -> dict:
-        """
-        Elimina el grupo y sus permisos en cascada (CU-08, paso 5).
-        Flujo alternativo CU-08: si se elimina un grupo, los permisos
-        asociados se eliminan también.
-        """
-        try:
-            grupo = self._repo_grupo.obtener(grupo_id)
-            nombre = grupo.nombre
-            self._repo_grupo.eliminar(grupo_id, propietario_id)
-            self._logger.registrar(
-                "ELIMINAR_GRUPO",
-                f"Usuario {propietario_id} eliminó grupo '{nombre}'",
-                propietario_id
-            )
-            return {"ok": True,
-                    "mensaje": f"Grupo '{nombre}' eliminado. Sus permisos fueron removidos."}
-        except ErrorNegocio as e:
-            return {"ok": False, "mensaje": str(e)}
-
-    def actualizar_miembros(self, propietario_id: int, grupo_id: int,
-                             amigo_ids: list) -> dict:
-        """
-        Asigna o reemplaza los miembros de un grupo (CU-08, pasos 3-4).
-        Solo se pueden asignar usuarios que sean amigos del propietario.
-        """
-        try:
-            # Verificar que todos los IDs sean amigos reales
-            amistades = self._repo_amistad.listar_de_usuario(propietario_id)
-            amigos_ids_validos = set()
+            amistades = self._repo_amistad.listar_de_usuario(idUsuario)
+            amigos = []
             for a in amistades:
-                otro = (a.usuario_destino
-                        if a.usuario_origen == propietario_id
-                        else a.usuario_origen)
-                amigos_ids_validos.add(otro)
-
-            ids_validos = [uid for uid in amigo_ids if uid in amigos_ids_validos]
-            self._repo_grupo.actualizar_miembros(grupo_id, propietario_id, ids_validos)
-            self._logger.registrar(
-                "ACTUALIZAR_MIEMBROS",
-                f"Usuario {propietario_id} actualizó miembros del grupo {grupo_id}",
-                propietario_id
-            )
-            return {"ok": True, "mensaje": "Miembros actualizados correctamente."}
-        except ErrorNegocio as e:
+                otro_id = (a.usuario_destino
+                           if a.usuario_origen == idUsuario
+                           else a.usuario_origen)
+                try:
+                    amigos.append(self._gestion.obtenerUsuarioPorId(otro_id))
+                except ErrorNegocio:
+                    continue
+            return {"ok": True, "amigos": amigos}
+        except Exception as e:
             return {"ok": False, "mensaje": str(e)}
 
-    # ══════════════════════════════════════════════
-    # CU-09 — Configurar permisos por grupo
-    # ══════════════════════════════════════════════
-
-    def configurar_permisos(self, propietario_id: int, grupo_id: int,
-                             ver_albumes: bool, comentar_fotos: bool,
-                             escribir_muro: bool) -> dict:
+    def crearGrupo(self, nombre: str, miembros: list) -> dict:
         """
-        Flujo principal CU-09: define qué acciones puede realizar el grupo.
-        Precondición: el grupo debe existir y pertenecer al propietario.
-        Flujo alternativo: si no se asigna ningún permiso, los miembros
-        no podrán realizar acciones (todos en False).
+        +crearGrupo(nombre: String, miembros: List<Integer>): Boolean
+        Usa self.usuarioActualId como propietario (no viene por parámetro).
         """
         try:
-            grupo = self._repo_grupo.obtener(grupo_id)
-            if grupo.propietario != propietario_id:
-                raise ErrorAcceso("No tenés permiso para configurar este grupo.")
-
-            permisos = GrupoPermiso(
-                grupo_id=grupo_id,
-                ver_albumes=ver_albumes,
-                comentar_fotos=comentar_fotos,
-                escribir_muro=escribir_muro
-            )
-            self._repo_grupo.guardar_permisos(permisos)
+            idUsuario = self._usuarioActualId
+            self.validarNombre(nombre)
+            self.validarUnicidadNombre(nombre, idUsuario)
+            miembros_validos = self._filtrarSoloAmigos(idUsuario, miembros or [])
+            grupo = self._repo_grupo.crear(idUsuario, nombre)
+            if miembros_validos:
+                self._repo_grupo.actualizar_miembros(grupo.id, idUsuario, miembros_validos)
             self._logger.registrar(
-                "CONFIGURAR_PERMISOS",
-                f"Usuario {propietario_id} configuró permisos del grupo {grupo_id}",
-                propietario_id
-            )
-            return {"ok": True, "mensaje": "Permisos guardados correctamente."}
+                "CREAR_GRUPO", f"Usuario {idUsuario} creó el grupo '{nombre}'", idUsuario)
+            return self.retornarResultado(True, f"Grupo '{nombre}' creado correctamente.")
         except (ErrorNegocio, ErrorAcceso) as e:
-            return {"ok": False, "mensaje": str(e)}
+            return self.retornarResultado(False, str(e))
+
+    def editarGrupo(self, idGrupo: int, nombre: str, miembros: list) -> dict:
+        """+editarGrupo(idGrupo: Integer, nombre: String, miembros: List<Integer>): Boolean"""
+        try:
+            idUsuario = self._usuarioActualId
+            if not self.verificarPropiedadGrupo(idGrupo, idUsuario):
+                raise ErrorAcceso("No tenés permiso para editar este grupo.")
+            self.validarNombre(nombre)
+            self.validarUnicidadNombre(nombre, idUsuario, idGrupoExcluir=idGrupo)
+            miembros_validos = self._filtrarSoloAmigos(idUsuario, miembros or [])
+            self._repo_grupo.renombrar(idGrupo, idUsuario, nombre)
+            self._repo_grupo.actualizar_miembros(idGrupo, idUsuario, miembros_validos)
+            self._logger.registrar(
+                "EDITAR_GRUPO", f"Usuario {idUsuario} editó el grupo {idGrupo}", idUsuario)
+            return self.retornarResultado(True, "Grupo actualizado correctamente.")
+        except (ErrorNegocio, ErrorAcceso) as e:
+            return self.retornarResultado(False, str(e))
+
+    def eliminarGrupo(self, idGrupo: int) -> dict:
+        """+eliminarGrupo(idGrupo: Integer): Boolean"""
+        try:
+            idUsuario = self._usuarioActualId
+            grupo = self._repo_grupo.obtener(idGrupo)
+            nombre = grupo.nombre
+            if not self.verificarPropiedadGrupo(idGrupo, idUsuario):
+                raise ErrorAcceso("No tenés permiso para eliminar este grupo.")
+            self._repo_grupo.eliminar(idGrupo, idUsuario)  # dispara Grupo.ejecutarEliminacionEnCascada()
+            self._logger.registrar(
+                "ELIMINAR_GRUPO", f"Usuario {idUsuario} eliminó grupo '{nombre}'", idUsuario)
+            return self.retornarResultado(
+                True, f"Grupo '{nombre}' eliminado. Sus permisos fueron removidos.")
+        except (ErrorNegocio, ErrorAcceso) as e:
+            return self.retornarResultado(False, str(e))
+
+    def verificarPropiedadGrupo(self, idGrupo: int, idUsuario: int) -> bool:
+        """+verificarPropiedadGrupo(idGrupo: Integer, idUsuario: Integer): Boolean"""
+        grupo = self._repo_grupo.obtener(idGrupo)
+        return grupo.propietario == idUsuario
+
+    def validarNombre(self, nombre: str) -> bool:
+        """Flujo alternativo: nombre de grupo vacío -> mostrar error (REV03/RE-02/REGR01)."""
+        if not nombre or not nombre.strip():
+            raise ErrorNegocio("El nombre del grupo es obligatorio.")
+        return True
+
+    def validarUnicidadNombre(self, nombre: str, idUsuario: int, idGrupoExcluir: int = None) -> bool:
+        """
+        +validarUnicidadNombre() — CU-08 análisis (REGC03/RE-06).
+        No puede haber dos grupos con el mismo nombre para el mismo usuario.
+        """
+        if self._repo_grupo.existe_nombre(idUsuario, nombre, excluir_id=idGrupoExcluir):
+            raise ErrorNegocio(f"Ya tenés un grupo llamado '{nombre}'.")
+        return True
+
+    def _filtrarSoloAmigos(self, idUsuario: int, miembros: list) -> list:
+        """REGR03: los miembros del grupo deben ser únicamente amigos del propietario."""
+        validos = []
+        for uid in miembros:
+            if uid == idUsuario:
+                continue
+            if self._repo_amistad.obtener_entre(idUsuario, uid) is not None:
+                validos.append(uid)
+        return validos
+
+    def retornarResultado(self, ok: bool, mensaje: str = "", **extra) -> dict:
+        self._resultadoOperacion = ok
+        resultado = {"ok": ok, "mensaje": mensaje}
+        resultado.update(extra)
+        return resultado
